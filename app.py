@@ -197,6 +197,9 @@ def get_stock():
                    COALESCE(SUM(CASE WHEN t.type='expense' THEN t.quantity ELSE 0 END), 0) AS total_expense,
                    COALESCE(SUM(CASE WHEN t.type='income' THEN t.quantity
                                      WHEN t.type='expense' THEN -t.quantity ELSE 0 END), 0) AS balance,
+                   COALESCE(SUM(CASE WHEN t.type='income' AND t.boxes IS NOT NULL THEN t.boxes ELSE 0 END), 0) AS total_income_boxes,
+                   COALESCE(SUM(CASE WHEN t.type='expense' AND t.boxes IS NOT NULL THEN t.boxes ELSE 0 END), 0) AS total_expense_boxes,
+                   COALESCE(MAX(CASE WHEN t.boxes IS NOT NULL THEN 1 ELSE 0 END), 0) AS has_boxes_data,
                    COALESCE(SUM(CASE WHEN t.type='income' AND COALESCE(t.currency,'UZS')='UZS'
                                      THEN t.quantity * t.price ELSE 0 END), 0) AS income_uzs_native,
                    COALESCE(SUM(CASE WHEN t.type='expense' AND COALESCE(t.currency,'UZS')='UZS'
@@ -204,7 +207,10 @@ def get_stock():
                    COALESCE(SUM(CASE WHEN t.type='income' AND COALESCE(t.currency,'UZS')='USD'
                                      THEN t.quantity * t.price ELSE 0 END), 0) AS income_usd_native,
                    COALESCE(SUM(CASE WHEN t.type='expense' AND COALESCE(t.currency,'UZS')='USD'
-                                     THEN t.quantity * t.price ELSE 0 END), 0) AS expense_usd_native
+                                     THEN t.quantity * t.price ELSE 0 END), 0) AS expense_usd_native,
+                   (SELECT units_per_box FROM transactions
+                    WHERE product_id = p.id AND units_per_box IS NOT NULL
+                    ORDER BY created_at DESC LIMIT 1) AS last_units_per_box
             FROM products p
             LEFT JOIN transactions t ON p.id = t.product_id
             GROUP BY p.id, p.name, p.unit
@@ -223,6 +229,15 @@ def get_stock():
             d["expense_uzs_native"] / rate if rate > 0 else 0
         )
         d["balance_usd"] = d["total_income_usd"] - d["total_expense_usd"]
+        upb = d.get("last_units_per_box")
+        income_boxes = d["total_income_boxes"]
+        expense_boxes = d["total_expense_boxes"]
+        if d["has_boxes_data"]:
+            d["balance_boxes"] = income_boxes - expense_boxes
+        elif upb and upb > 0:
+            d["balance_boxes"] = d["balance"] / upb
+        else:
+            d["balance_boxes"] = None
         result.append(d)
     return result
 
