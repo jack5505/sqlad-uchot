@@ -133,6 +133,16 @@ def init_db():
                 conn.execute(
                     "ALTER TABLE transactions ADD COLUMN units_per_box REAL DEFAULT NULL"
                 )
+        if "selling_price" not in col_names:
+            with get_db() as conn:
+                conn.execute(
+                    "ALTER TABLE transactions ADD COLUMN selling_price REAL DEFAULT NULL"
+                )
+        if "selling_currency" not in col_names:
+            with get_db() as conn:
+                conn.execute(
+                    "ALTER TABLE transactions ADD COLUMN selling_currency TEXT DEFAULT NULL"
+                )
     else:
         with get_db() as conn:
             conn.execute(
@@ -149,6 +159,14 @@ def init_db():
         with get_db() as conn:
             conn.execute(
                 "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS units_per_box REAL DEFAULT NULL"
+            )
+        with get_db() as conn:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS selling_price REAL DEFAULT NULL"
+            )
+        with get_db() as conn:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS selling_currency TEXT DEFAULT NULL"
             )
 
 
@@ -208,6 +226,10 @@ def get_stock():
                                      THEN t.quantity * t.price ELSE 0 END), 0) AS income_usd_native,
                    COALESCE(SUM(CASE WHEN t.type='expense' AND COALESCE(t.currency,'UZS')='USD'
                                      THEN t.quantity * t.price ELSE 0 END), 0) AS expense_usd_native,
+                   COALESCE(SUM(CASE WHEN t.type='expense' AND COALESCE(t.selling_currency,'UZS')='UZS'
+                                     THEN COALESCE(t.selling_price,0) ELSE 0 END), 0) AS selling_uzs_native,
+                   COALESCE(SUM(CASE WHEN t.type='expense' AND COALESCE(t.selling_currency,'UZS')='USD'
+                                     THEN COALESCE(t.selling_price,0) ELSE 0 END), 0) AS selling_usd_native,
                    (SELECT units_per_box FROM transactions
                     WHERE product_id = p.id AND units_per_box IS NOT NULL
                     ORDER BY created_at DESC LIMIT 1) AS last_units_per_box
@@ -229,6 +251,10 @@ def get_stock():
             d["expense_uzs_native"] / rate if rate > 0 else 0
         )
         d["balance_usd"] = d["total_income_usd"] - d["total_expense_usd"]
+        d["total_selling_uzs"] = d["selling_uzs_native"] + d["selling_usd_native"] * rate
+        d["total_selling_usd"] = d["selling_usd_native"] + (
+            d["selling_uzs_native"] / rate if rate > 0 else 0
+        )
         upb = d.get("last_units_per_box")
         income_boxes = d["total_income_boxes"]
         expense_boxes = d["total_expense_boxes"]
@@ -386,79 +412,128 @@ def income():
 @app.route("/expense", methods=["GET", "POST"])
 def expense():
     if request.method == "POST":
-        product_id = request.form.get("product_id")
-        quantity = request.form.get("quantity", "").strip()
-        boxes_str = request.form.get("boxes", "").strip()
-        units_per_box_str = request.form.get("units_per_box", "").strip()
-        price = request.form.get("price", "0").strip()
-        currency = request.form.get("currency", "UZS").strip()
-        if currency not in ("UZS", "USD"):
-            currency = "UZS"
-        note = request.form.get("note", "").strip()
-        error = None
+        product_ids = request.form.getlist("product_id")
+        boxes_list = request.form.getlist("boxes")
+        units_per_box_list = request.form.getlist("units_per_box")
+        selling_price_list = request.form.getlist("selling_price")
+        selling_currency_list = request.form.getlist("selling_currency")
+        note_list = request.form.getlist("note")
 
-        pid = None
-        if not product_id:
-            error = "Выберите товар."
-        else:
+        # Ensure all lists have the same length
+        n = len(product_ids)
+
+        def _pad(lst, default, length):
+            if len(lst) < length:
+                lst = lst + [default] * (length - len(lst))
+            return lst[:length]
+
+        boxes_list = _pad(boxes_list, "", n)
+        units_per_box_list = _pad(units_per_box_list, "", n)
+        selling_price_list = _pad(selling_price_list, "", n)
+        selling_currency_list = _pad(selling_currency_list, "UZS", n)
+        note_list = _pad(note_list, "", n)
+
+        errors = []
+        rows = []
+
+        for i in range(n):
+            pid_str = product_ids[i]
+            boxes_str = boxes_list[i].strip()
+            upb_str = units_per_box_list[i].strip()
+            sp_str = selling_price_list[i].strip()
+            sc = selling_currency_list[i].strip()
+            note = note_list[i].strip()
+
+            if sc not in ("UZS", "USD"):
+                sc = "UZS"
+
+            if not pid_str:
+                errors.append(f"Строка {i+1}: Выберите товар.")
+                continue
+
             try:
-                pid = int(product_id)
+                pid = int(pid_str)
             except (ValueError, TypeError):
-                error = "Неверный идентификатор товара."
+                errors.append(f"Строка {i+1}: Неверный идентификатор товара.")
+                continue
 
-        boxes = None
-        units_per_box = None
+            boxes = None
+            units_per_box = None
 
-        if error is None and boxes_str:
-            try:
-                boxes = float(boxes_str)
-                if boxes <= 0:
-                    raise ValueError
-            except (ValueError, TypeError):
-                error = "Количество коробок должно быть положительным числом."
-        if error is None and units_per_box_str:
-            try:
-                units_per_box = float(units_per_box_str)
-                if units_per_box <= 0:
-                    raise ValueError
-            except (ValueError, TypeError):
-                error = "Штук в коробке должно быть положительным числом."
-
-        if error is None:
-            if boxes is not None and units_per_box is not None:
-                qty = boxes * units_per_box
-            else:
+            if boxes_str:
                 try:
-                    qty = float(quantity)
-                    if qty <= 0:
+                    boxes = float(boxes_str)
+                    if boxes <= 0:
                         raise ValueError
                 except (ValueError, TypeError):
-                    error = "Количество должно быть положительным числом."
+                    errors.append(f"Строка {i+1}: Количество коробок должно быть положительным числом.")
+                    continue
 
-        if error is None:
+            if upb_str:
+                try:
+                    units_per_box = float(upb_str)
+                    if units_per_box <= 0:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    errors.append(f"Строка {i+1}: Штук в коробке должно быть положительным числом.")
+                    continue
+
+            # For expense, quantity is required and derived from boxes
+            if boxes is None:
+                errors.append(f"Строка {i+1}: Укажите количество коробок.")
+                continue
+
+            # Derive units_per_box from the product's last income if not provided
+            if units_per_box is None:
+                with get_db() as conn:
+                    upb_row = conn.execute(
+                        "SELECT units_per_box FROM transactions"
+                        " WHERE product_id=? AND type='income' AND units_per_box IS NOT NULL"
+                        " ORDER BY created_at DESC LIMIT 1",
+                        (pid,),
+                    ).fetchone()
+                if upb_row:
+                    units_per_box = upb_row["units_per_box"]
+
+            if units_per_box and units_per_box > 0:
+                qty = boxes * units_per_box
+            else:
+                qty = boxes  # treat boxes as plain quantity when upb unknown
+
             try:
-                prc = float(price) if price else 0.0
-                if prc < 0:
+                sp = float(sp_str) if sp_str else 0.0
+                if sp < 0:
                     raise ValueError
             except (ValueError, TypeError):
-                error = "Цена должна быть неотрицательным числом."
-        if error is None:
+                errors.append(f"Строка {i+1}: Продажная сумма должна быть неотрицательным числом.")
+                continue
+
             with get_db() as conn:
                 product = conn.execute(
                     "SELECT id FROM products WHERE id=?", (pid,)
                 ).fetchone()
-                if not product:
-                    error = "Товар не найден."
-        if error:
-            flash(error, "danger")
+            if not product:
+                errors.append(f"Строка {i+1}: Товар не найден.")
+                continue
+
+            rows.append((pid, qty, boxes, units_per_box, sp, sc, note or None))
+
+        if errors:
+            for err in errors:
+                flash(err, "danger")
+        elif not rows:
+            flash("Добавьте хотя бы один товар.", "warning")
         else:
             try:
                 with get_db() as conn:
-                    conn.execute(
-                        "INSERT INTO transactions (product_id, type, quantity, boxes, units_per_box, price, currency, note)"
-                        " VALUES (?, 'expense', ?, ?, ?, ?, ?, ?)",
-                        (pid, qty, boxes, units_per_box, prc, currency, note or None),
-                    )
+                    for (pid, qty, boxes, units_per_box, sp, sc, note) in rows:
+                        conn.execute(
+                            "INSERT INTO transactions"
+                            " (product_id, type, quantity, boxes, units_per_box, price, currency,"
+                            "  selling_price, selling_currency, note)"
+                            " VALUES (?, 'expense', ?, ?, ?, 0, 'UZS', ?, ?, ?)",
+                            (pid, qty, boxes, units_per_box, sp, sc, note),
+                        )
                 flash("Расход зарегистрирован.", "success")
             except _DatabaseError:
                 app.logger.exception("Ошибка при регистрации расхода")
@@ -470,10 +545,22 @@ def expense():
         all_products = conn.execute(
             "SELECT id, name, unit FROM products ORDER BY name"
         ).fetchall()
+    # Enrich products with last known units_per_box from income transactions
+    products_with_upb = []
+    for p in all_products:
+        d = dict(p)
+        with get_db() as conn:
+            upb_row = conn.execute(
+                "SELECT units_per_box FROM transactions"
+                " WHERE product_id=? AND type='income' AND units_per_box IS NOT NULL"
+                " ORDER BY created_at DESC LIMIT 1",
+                (p["id"],),
+            ).fetchone()
+        d["last_units_per_box"] = upb_row["units_per_box"] if upb_row else None
+        products_with_upb.append(d)
     return render_template(
-        "transaction_form.html",
-        products=all_products,
-        tx_type="expense",
+        "expense_form.html",
+        products=products_with_upb,
         exchange_rate=rate,
     )
 
@@ -487,8 +574,12 @@ def history():
             "SELECT id, name FROM products ORDER BY name"
         ).fetchall()
         query = """
-            SELECT t.id, p.name AS product_name, p.unit, t.type, t.quantity, t.price,
-                   COALESCE(t.currency, 'UZS') AS currency, t.note, t.created_at
+            SELECT t.id, p.name AS product_name, p.unit, t.type, t.quantity,
+                   t.boxes,
+                   t.price,
+                   COALESCE(t.currency, 'UZS') AS currency,
+                   t.selling_price, t.selling_currency,
+                   t.note, t.created_at
             FROM transactions t
             JOIN products p ON p.id = t.product_id
         """

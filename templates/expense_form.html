@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Расход{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>➖ Регистрация расхода</h2>
+
+  {% if products %}
+  <p style="font-size:.85rem;color:#888;margin-bottom:1rem;">
+    Текущий курс: <strong>1 USD = {{ exchange_rate | fmt_uzs }} UZS</strong>
+    (<a href="{{ url_for('settings') }}" style="color:#1a73e8;">изменить</a>)
+  </p>
+
+  <form method="post" id="expense-form">
+    <div id="expense-rows">
+
+      <div class="expense-row" style="border:1px solid #e8eaf0;border-radius:8px;padding:1rem;margin-bottom:.75rem;background:#fafbff;">
+        <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
+          <div class="form-group" style="flex:2;min-width:200px;margin-bottom:0;">
+            <label>Товар *</label>
+            <select name="product_id" class="product-select" required>
+              <option value="">— выберите товар —</option>
+              {% for p in products %}
+              <option value="{{ p.id }}"
+                data-upb="{{ p.last_units_per_box if p.last_units_per_box else '' }}"
+                data-name="{{ p.name }}">{{ p.name }} ({{ p.unit }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0;">
+            <label>Коробок *</label>
+            <input type="number" name="boxes" class="boxes-input" min="0.001" step="any" placeholder="0" required />
+          </div>
+          <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0;">
+            <label>Штук в коробке</label>
+            <input type="number" name="units_per_box" class="upb-input" min="0.001" step="any" placeholder="из прихода" />
+          </div>
+          <div class="form-group" style="flex:1;min-width:100px;margin-bottom:0;">
+            <label>Итого штук</label>
+            <input type="text" class="qty-display" readonly placeholder="—"
+              style="background:#f5f8ff;color:#555;cursor:default;" tabindex="-1" />
+          </div>
+          <div class="form-group" style="flex:1.5;min-width:150px;margin-bottom:0;">
+            <label>Продажная сумма</label>
+            <input type="number" name="selling_price" class="selling-price-input" min="0" step="any" placeholder="0.00" />
+          </div>
+          <div class="form-group" style="min-width:130px;margin-bottom:0;">
+            <label>Валюта продажи</label>
+            <select name="selling_currency">
+              <option value="UZS">UZS (Сум)</option>
+              <option value="USD">USD (Доллар $)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:2;min-width:180px;margin-bottom:0;">
+            <label>Примечание</label>
+            <input type="text" name="note" placeholder="Необязательно" maxlength="300" />
+          </div>
+          <div style="align-self:flex-end;">
+            <button type="button" class="btn remove-row-btn"
+              style="background:#ef5350;color:white;padding:.45rem .9rem;font-size:1rem;line-height:1;"
+              title="Удалить строку">✕</button>
+          </div>
+        </div>
+        <p class="row-total-line" style="font-size:.85rem;color:#555;margin-top:.5rem;margin-bottom:0;display:none;">
+          Продажная сумма: <strong class="row-total-val"></strong>
+        </p>
+      </div>
+
+    </div><!-- #expense-rows -->
+
+    <div style="margin-bottom:1.25rem;">
+      <button type="button" id="add-row-btn" class="btn"
+        style="background:#43a047;color:white;padding:.45rem 1rem;">+ Добавить товар</button>
+    </div>
+
+    <button type="submit" class="btn btn-danger"
+      style="font-size:.95rem;padding:.55rem 1.4rem;">Зарегистрировать расход</button>
+  </form>
+
+  {% else %}
+  <p class="empty">Нет товаров. <a href="{{ url_for('products') }}">Сначала добавьте товар</a>.</p>
+  {% endif %}
+</div>
+
+{% if products %}
+<script>
+(function () {
+  var rate = {{ exchange_rate }};
+
+  function setupRow(row) {
+    var productSel = row.querySelector('.product-select');
+    var boxesEl    = row.querySelector('.boxes-input');
+    var upbEl      = row.querySelector('.upb-input');
+    var qtyDisplay = row.querySelector('.qty-display');
+    var spEl       = row.querySelector('.selling-price-input');
+    var scEl       = row.querySelector('select[name="selling_currency"]');
+    var totalLine  = row.querySelector('.row-total-line');
+    var totalVal   = row.querySelector('.row-total-val');
+    var removeBtn  = row.querySelector('.remove-row-btn');
+
+    function getEffectiveUpb() {
+      var manual = parseFloat(upbEl.value);
+      if (!isNaN(manual) && manual > 0) return manual;
+      var opt = productSel.options[productSel.selectedIndex];
+      if (opt) {
+        var d = parseFloat(opt.getAttribute('data-upb'));
+        if (!isNaN(d) && d > 0) return d;
+      }
+      return NaN;
+    }
+
+    function recalcQty() {
+      var bx  = parseFloat(boxesEl.value);
+      var upb = getEffectiveUpb();
+      if (!isNaN(bx) && bx > 0 && !isNaN(upb)) {
+        qtyDisplay.value = (bx * upb).toFixed(0);
+      } else if (!isNaN(bx) && bx > 0) {
+        qtyDisplay.value = bx.toFixed(0);
+      } else {
+        qtyDisplay.value = '';
+      }
+      updateTotal();
+    }
+
+    function updateTotal() {
+      var sp = parseFloat(spEl.value);
+      if (!isNaN(sp) && sp > 0) {
+        var cur = scEl ? scEl.value : 'UZS';
+        var label;
+        if (cur === 'USD') {
+          label = sp.toFixed(2) + ' USD  ≈  ' +
+                  Math.round(sp * rate).toLocaleString('ru-RU') + ' UZS';
+        } else {
+          label = Math.round(sp).toLocaleString('ru-RU') + ' UZS  ≈  $' +
+                  (sp / rate).toFixed(2);
+        }
+        totalVal.textContent = label;
+        totalLine.style.display = 'block';
+      } else {
+        totalLine.style.display = 'none';
+      }
+    }
+
+    function onProductChange() {
+      var opt = productSel.options[productSel.selectedIndex];
+      var upb = opt ? opt.getAttribute('data-upb') : '';
+      if (upb && !upbEl.value) {
+        upbEl.placeholder = upb + ' (из прихода)';
+      } else {
+        upbEl.placeholder = 'из прихода';
+      }
+      recalcQty();
+    }
+
+    productSel.addEventListener('change', onProductChange);
+    boxesEl.addEventListener('input', recalcQty);
+    upbEl.addEventListener('input', recalcQty);
+    if (spEl) spEl.addEventListener('input', updateTotal);
+    if (scEl) scEl.addEventListener('change', updateTotal);
+
+    removeBtn.addEventListener('click', function () {
+      var rows = document.querySelectorAll('.expense-row');
+      if (rows.length > 1) {
+        row.parentNode.removeChild(row);
+      }
+    });
+
+    // Trigger placeholder update on initial render
+    onProductChange();
+  }
+
+  // Setup first row
+  document.querySelectorAll('.expense-row').forEach(setupRow);
+
+  // Add row button
+  document.getElementById('add-row-btn').addEventListener('click', function () {
+    var container = document.getElementById('expense-rows');
+    var first = container.querySelector('.expense-row');
+    var newRow = first.cloneNode(true);
+
+    newRow.querySelectorAll('input').forEach(function (el) {
+      el.value = '';
+      var orig = el.getAttribute('placeholder') || '';
+      // Reset placeholder (upb placeholder may be set dynamically)
+      if (el.classList.contains('upb-input')) {
+        el.placeholder = 'из прихода';
+      } else {
+        el.placeholder = orig;
+      }
+    });
+    newRow.querySelectorAll('select').forEach(function (el) {
+      el.selectedIndex = 0;
+    });
+    newRow.querySelector('.qty-display').value = '';
+    var tl = newRow.querySelector('.row-total-line');
+    if (tl) tl.style.display = 'none';
+
+    setupRow(newRow);
+    container.appendChild(newRow);
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
