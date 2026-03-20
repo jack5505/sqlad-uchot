@@ -4,7 +4,12 @@
 {% block content %}
 {% set total_products = stock | length %}
 {% set products_in_stock = stock | selectattr('balance', 'gt', 0) | list | length %}
-{% set total_warehouse_sum = stock | sum(attribute='balance_sum') %}
+{% set total_warehouse_uzs = namespace(val=0) %}
+{% set total_warehouse_usd = namespace(val=0) %}
+{% for row in stock %}
+  {% set total_warehouse_uzs.val = total_warehouse_uzs.val + row.balance_uzs %}
+  {% set total_warehouse_usd.val = total_warehouse_usd.val + row.balance_usd %}
+{% endfor %}
 
 <div class="stats-grid">
   <div class="stat-card">
@@ -16,25 +21,34 @@
     <div class="stat-label">Товаров в наличии</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value">{{ total_warehouse_sum | round(2) | string | replace('.0', '') }}</div>
-    <div class="stat-label">Общая стоимость склада</div>
+    <div class="stat-value">{{ total_warehouse_uzs.val | fmt_uzs }}</div>
+    <div class="stat-label">Стоимость склада (UZS)</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">${{ total_warehouse_usd.val | fmt_usd }}</div>
+    <div class="stat-label">Стоимость склада (USD)</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ exchange_rate | fmt_uzs }}</div>
+    <div class="stat-label">1 USD в UZS (<a href="{{ url_for('settings') }}" style="color:#1a73e8;font-size:.75rem;">изменить</a>)</div>
   </div>
 </div>
 
 <div class="card">
   <h2>Текущие остатки</h2>
   {% if stock %}
+  <div style="overflow-x:auto;">
   <table>
     <thead>
       <tr>
         <th>#</th>
         <th>Товар</th>
         <th>Ед. изм.</th>
-        <th>Приход</th>
-        <th>Расход</th>
-        <th>Остаток</th>
-        <th>Сумма прихода</th>
-        <th>Сумма расхода</th>
+        <th>Приход (кол-во)</th>
+        <th>Расход (кол-во)</th>
+        <th>Остаток (кол-во)</th>
+        <th>Приход (сумма)</th>
+        <th>Расход (сумма)</th>
         <th>Стоимость</th>
       </tr>
     </thead>
@@ -55,23 +69,34 @@
             <span class="balance-zero">0</span>
           {% endif %}
         </td>
-        <td class="balance-positive">{{ row.total_income_sum | round(2) | string | replace('.0', '') }}</td>
-        <td class="balance-negative">{{ row.total_expense_sum | round(2) | string | replace('.0', '') }}</td>
+        <td class="balance-positive">
+          {{ row.total_income_uzs | fmt_uzs }} <small style="color:#888;">UZS</small><br/>
+          <small class="balance-positive">${{ row.total_income_usd | fmt_usd }}</small>
+        </td>
+        <td class="balance-negative">
+          {{ row.total_expense_uzs | fmt_uzs }} <small style="color:#888;">UZS</small><br/>
+          <small class="balance-negative">${{ row.total_expense_usd | fmt_usd }}</small>
+        </td>
         <td>
-          {% if row.balance_sum > 0 %}
-            <span class="balance-positive">{{ row.balance_sum | round(2) | string | replace('.0', '') }}</span>
-          {% elif row.balance_sum < 0 %}
-            <span class="balance-negative">{{ row.balance_sum | round(2) | string | replace('.0', '') }}</span>
+          {% if row.balance_uzs > 0 %}
+            <span class="balance-positive">{{ row.balance_uzs | fmt_uzs }} UZS</span><br/>
+            <small class="balance-positive">${{ row.balance_usd | fmt_usd }}</small>
+          {% elif row.balance_uzs < 0 %}
+            <span class="balance-negative">{{ row.balance_uzs | fmt_uzs }} UZS</span><br/>
+            <small class="balance-negative">${{ row.balance_usd | fmt_usd }}</small>
           {% else %}
-            <span class="balance-zero">0</span>
+            <span class="balance-zero">0 UZS</span><br/>
+            <small class="balance-zero">$0.00</small>
           {% endif %}
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="empty">Нет товаров. <a href="{{ url_for('products') }}">Добавьте товар</a>, затем зарегистрируйте <a href="{{ url_for('income') }}">приход</a>.</p>
   {% endif %}
 </div>
 {% endblock %}
+

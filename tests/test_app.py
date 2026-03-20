@@ -140,3 +140,103 @@ def test_products_page(client):
     rv = client.get("/products")
     assert rv.status_code == 200
     assert "Добавить товар".encode() in rv.data
+
+
+# ── Currency / exchange-rate tests ──────────────────────────────────────────
+
+def test_settings_page(client):
+    rv = client.get("/settings")
+    assert rv.status_code == 200
+    assert "USD".encode() in rv.data
+    assert "UZS".encode() in rv.data
+
+
+def test_settings_update_exchange_rate(client):
+    rv = client.post("/settings", data={"exchange_rate": "13500"}, follow_redirects=True)
+    assert rv.status_code == 200
+    assert "13500".encode() in rv.data or "13 500".encode() in rv.data
+    import app as app_module
+    assert app_module.get_exchange_rate() == 13500.0
+
+
+def test_settings_invalid_rate(client):
+    rv = client.post("/settings", data={"exchange_rate": "-1"}, follow_redirects=True)
+    assert rv.status_code == 200
+    assert "положительным".encode() in rv.data
+
+
+def test_income_with_currency_uzs(client):
+    pid = _add_product(client, "Цемент", "мешок")
+    rv = client.post(
+        "/income",
+        data={"product_id": pid, "quantity": "10", "price": "50000", "currency": "UZS"},
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    assert "зарегистрирован".encode() in rv.data
+
+
+def test_income_with_currency_usd(client):
+    pid = _add_product(client, "Краска USD", "л")
+    rv = client.post(
+        "/income",
+        data={"product_id": pid, "quantity": "5", "price": "3.50", "currency": "USD"},
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    assert "зарегистрирован".encode() in rv.data
+
+
+def test_stock_dual_currency(client):
+    """Income in USD should be converted to UZS using the exchange rate."""
+    import app as app_module
+
+    # Set rate to 12000
+    client.post("/settings", data={"exchange_rate": "12000"})
+
+    pid = _add_product(client, "Доллары Товар", "шт")
+    # 2 units at $5 each = $10 income
+    client.post("/income", data={"product_id": pid, "quantity": "2", "price": "5", "currency": "USD"})
+
+    stock = app_module.get_stock()
+    row = next(r for r in stock if r["name"] == "Доллары Товар")
+
+    assert row["total_income"] == 2
+    assert abs(row["total_income_usd"] - 10.0) < 0.01
+    assert abs(row["total_income_uzs"] - 120000.0) < 1.0
+
+
+def test_stock_mixed_currency(client):
+    """Mix of UZS and USD income is correctly totalled."""
+    import app as app_module
+
+    client.post("/settings", data={"exchange_rate": "10000"})
+
+    pid = _add_product(client, "Смешанный Товар", "шт")
+    client.post("/income", data={"product_id": pid, "quantity": "1", "price": "20000", "currency": "UZS"})
+    client.post("/income", data={"product_id": pid, "quantity": "1", "price": "2", "currency": "USD"})
+
+    stock = app_module.get_stock()
+    row = next(r for r in stock if r["name"] == "Смешанный Товар")
+
+    assert row["total_income"] == 2
+    # USD: $2 → 20,000 UZS, total UZS = 20,000 + 20,000 = 40,000
+    assert abs(row["total_income_uzs"] - 40000.0) < 1.0
+    # UZS 20,000 → $2, + $2 = $4 total
+    assert abs(row["total_income_usd"] - 4.0) < 0.01
+
+
+def test_history_page_shows_currency(client):
+    pid = _add_product(client, "Тест валюта", "шт")
+    client.post("/income", data={"product_id": pid, "quantity": "3", "price": "100", "currency": "USD"})
+    rv = client.get("/history")
+    assert rv.status_code == 200
+    assert "USD".encode() in rv.data
+
+
+def test_index_shows_exchange_rate(client):
+    client.post("/settings", data={"exchange_rate": "11111"})
+    rv = client.get("/")
+    assert rv.status_code == 200
+    # fmt_uzs uses narrow no-break space (\u202f) as thousands separator
+    assert "11\u202f111".encode("utf-8") in rv.data

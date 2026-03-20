@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Настройки{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>⚙️ Настройки — Курс валют</h2>
+  <p style="margin-bottom:1.25rem;color:#555;font-size:.95rem;">
+    Укажите, сколько <strong>UZS (сум)</strong> содержится в одном <strong>USD (долларе)</strong>.
+    Этот курс используется для перевода сумм при отображении остатков и истории.
+  </p>
+  <form method="post" style="max-width:420px;">
+    <div class="form-group">
+      <label for="exchange_rate">1 USD = ? UZS</label>
+      <input type="number" id="exchange_rate" name="exchange_rate"
+             min="1" step="1" value="{{ exchange_rate | int }}" required />
+    </div>
+    <button type="submit" class="btn btn-primary">💾 Сохранить курс</button>
+  </form>
+  <div style="margin-top:1.5rem;padding:1rem;background:#f0f8ff;border-radius:6px;border:1px solid #c8e0f7;">
+    <strong>Текущий курс:</strong> 1 USD = <strong>{{ exchange_rate | fmt_uzs }} UZS</strong>
+  </div>
+</div>
+{% endblock %}

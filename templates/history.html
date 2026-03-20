@@ -4,6 +4,10 @@
 {% block content %}
 <div class="card">
   <h2>История операций</h2>
+  <p style="margin-bottom:.75rem;font-size:.9rem;color:#555;">
+    Курс: <strong>1 USD = {{ exchange_rate | fmt_uzs }} UZS</strong>
+    (<a href="{{ url_for('settings') }}" style="color:#1a73e8;">изменить</a>)
+  </p>
   <form method="get" style="display:flex;gap:.75rem;align-items:flex-end;margin-bottom:1rem;flex-wrap:wrap;">
     <div class="form-group" style="margin:0;flex:1;min-width:200px;">
       <label for="product_id">Фильтр по товару</label>
@@ -21,6 +25,7 @@
   </form>
 
   {% if transactions %}
+  <div style="overflow-x:auto;">
   <table>
     <thead>
       <tr>
@@ -30,12 +35,21 @@
         <th>Тип</th>
         <th>Количество</th>
         <th>Цена</th>
-        <th>Сумма</th>
+        <th>Сумма (UZS)</th>
+        <th>Сумма (USD)</th>
         <th>Примечание</th>
       </tr>
     </thead>
     <tbody>
       {% for t in transactions %}
+      {% set line_sum = t.quantity * t.price %}
+      {% if t.currency == 'USD' %}
+        {% set line_uzs = line_sum * exchange_rate %}
+        {% set line_usd = line_sum %}
+      {% else %}
+        {% set line_uzs = line_sum %}
+        {% set line_usd = line_sum / exchange_rate if exchange_rate > 0 else 0 %}
+      {% endif %}
       <tr>
         <td>{{ loop.index }}</td>
         <td>{{ (t.created_at | string)[:16] | replace('T', ' ') }}</td>
@@ -55,13 +69,22 @@
           {% endif %}
           {{ t.unit }}
         </td>
-        <td>{{ t.price | round(2) | string | replace('.0', '') }}</td>
         <td>
-          {% set line_sum = t.quantity * t.price %}
+          {{ t.price | round(2) | string | replace('.0', '') }}
+          <span style="font-size:.8rem;color:#888;">{{ t.currency }}</span>
+        </td>
+        <td>
           {% if t.type == 'income' %}
-            <span class="balance-positive">+{{ line_sum | round(2) | string | replace('.0', '') }}</span>
+            <span class="balance-positive">+{{ line_uzs | fmt_uzs }}</span>
           {% else %}
-            <span class="balance-negative">−{{ line_sum | round(2) | string | replace('.0', '') }}</span>
+            <span class="balance-negative">−{{ line_uzs | fmt_uzs }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if t.type == 'income' %}
+            <span class="balance-positive">+${{ line_usd | fmt_usd }}</span>
+          {% else %}
+            <span class="balance-negative">−${{ line_usd | fmt_usd }}</span>
           {% endif %}
         </td>
         <td>{{ t.note or '—' }}</td>
@@ -69,8 +92,10 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="empty">Операций не найдено.</p>
   {% endif %}
 </div>
 {% endblock %}
+
