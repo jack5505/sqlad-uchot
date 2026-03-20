@@ -38,7 +38,7 @@
         <th>Цена</th>
         <th>Сумма (UZS)</th>
         <th>Сумма (USD)</th>
-        <th>Продажная сумма</th>
+        <th>Сумма продаж (итого)</th>
         <th>Примечание</th>
       </tr>
     </thead>
@@ -99,10 +99,11 @@
         <td>
           {% if t.type == 'expense' and t.selling_price %}
             {% set sc = t.selling_currency or 'UZS' %}
+            {% set total_sell = t.selling_price * (t.boxes if t.boxes is not none and t.boxes > 0 else 1) %}
             {% if sc == 'USD' %}
-              <span class="balance-positive">${{ t.selling_price | fmt_usd }}</span>
+              <span class="balance-positive">${{ total_sell | fmt_usd }}</span>
             {% else %}
-              <span class="balance-positive">{{ t.selling_price | fmt_uzs }} UZS</span>
+              <span class="balance-positive">{{ total_sell | fmt_uzs }} UZS</span>
             {% endif %}
           {% else %}
             <span style="color:#aaa;">—</span>
