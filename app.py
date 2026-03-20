@@ -1,31 +1,77 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
-import sqlite3
 import os
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or __import__("secrets").token_hex(32)
 
-DATABASE = os.environ.get("DATABASE", "warehouse.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+_use_postgres = DATABASE_URL.startswith("postgres")
+
+if _use_postgres:
+    import psycopg2
+    import psycopg2.extras
+    import psycopg2.errors
+    _DuplicateKeyError = psycopg2.errors.UniqueViolation
+else:
+    import sqlite3
+    DATABASE = os.environ.get("DATABASE", "warehouse.db")
+    _DuplicateKeyError = sqlite3.IntegrityError
+
+
+class _PGWrapper:
+    """Wraps a psycopg2 connection with a sqlite3-compatible interface."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur
+
+    def executescript(self, sql):
+        cur = self._conn.cursor()
+        for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+            cur.execute(stmt)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, *_):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
 
 
 def get_db():
+    if _use_postgres:
+        conn = psycopg2.connect(DATABASE_URL)
+        return _PGWrapper(conn)
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
+    if _use_postgres:
+        id_type = "SERIAL PRIMARY KEY"
+    else:
+        id_type = "INTEGER PRIMARY KEY AUTOINCREMENT"
+
     with get_db() as conn:
-        conn.executescript("""
+        conn.executescript(f"""
             CREATE TABLE IF NOT EXISTS products (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {id_type},
                 name TEXT NOT NULL UNIQUE,
                 unit TEXT NOT NULL DEFAULT 'шт',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {id_type},
                 product_id INTEGER NOT NULL,
                 type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
                 quantity REAL NOT NULL CHECK(quantity > 0),
@@ -77,7 +123,7 @@ def products():
                         (name, unit),
                     )
                 flash(f"Товар «{name}» добавлен.", "success")
-            except sqlite3.IntegrityError:
+            except _DuplicateKeyError:
                 flash(f"Товар «{name}» уже существует.", "warning")
         return redirect(url_for("products"))
 
