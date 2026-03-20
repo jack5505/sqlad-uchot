@@ -10,7 +10,7 @@
   {% endif %}
 
   {% if products %}
-  <form method="post">
+  <form method="post" id="tx-form">
     <div class="form-group">
       <label for="product_id">Товар *</label>
       <select name="product_id" id="product_id" required>
@@ -20,10 +20,26 @@
         {% endfor %}
       </select>
     </div>
-    <div class="form-group">
-      <label for="quantity">Количество *</label>
-      <input type="number" id="quantity" name="quantity" min="0.001" step="any" placeholder="0" required />
+
+    <div style="display:flex;gap:.75rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:1rem;">
+      <div style="flex:1;min-width:140px;" class="form-group" style="margin-bottom:0;">
+        <label for="boxes">Количество коробок</label>
+        <input type="number" id="boxes" name="boxes" min="0.001" step="any" placeholder="0" />
+      </div>
+      <div style="flex:1;min-width:140px;" class="form-group" style="margin-bottom:0;">
+        <label for="units_per_box">Штук в коробке</label>
+        <input type="number" id="units_per_box" name="units_per_box" min="0.001" step="any" placeholder="0" />
+      </div>
+      <div style="flex:1;min-width:140px;" class="form-group" style="margin-bottom:0;">
+        <label for="quantity">Общий штук *</label>
+        <input type="number" id="quantity" name="quantity" min="0.001" step="any" placeholder="0" required />
+      </div>
     </div>
+    <p style="font-size:.85rem;color:#888;margin-top:-.5rem;margin-bottom:1rem;">
+      Заполните «Количество коробок» и «Штук в коробке» — итог рассчитается автоматически,
+      или введите «Общий штук» напрямую.
+    </p>
+
     <div class="form-group" style="display:flex;gap:.75rem;align-items:flex-start;flex-wrap:wrap;">
       <div style="flex:1;min-width:160px;">
         <label for="price">Цена за единицу</label>
@@ -37,7 +53,10 @@
         </select>
       </div>
     </div>
-    <p style="font-size:.85rem;color:#888;margin-top:-.5rem;margin-bottom:1rem;">
+    <p id="total-cost-line" style="font-size:.9rem;color:#333;margin-top:-.5rem;margin-bottom:.5rem;display:none;">
+      Общая стоимость: <strong id="total-cost-val"></strong>
+    </p>
+    <p style="font-size:.85rem;color:#888;margin-bottom:1rem;">
       Текущий курс: <strong>1 USD = {{ exchange_rate | fmt_uzs }} UZS</strong>
       (<a href="{{ url_for('settings') }}" style="color:#1a73e8;">изменить</a>)
     </p>
@@ -55,5 +74,59 @@
   <p class="empty">Нет товаров. <a href="{{ url_for('products') }}">Сначала добавьте товар</a>.</p>
   {% endif %}
 </div>
+
+<script>
+(function () {
+  var boxesEl = document.getElementById('boxes');
+  var upbEl   = document.getElementById('units_per_box');
+  var qtyEl   = document.getElementById('quantity');
+  var priceEl = document.getElementById('price');
+  var curEl   = document.getElementById('currency');
+  var costLine = document.getElementById('total-cost-line');
+  var costVal  = document.getElementById('total-cost-val');
+  var rate = {{ exchange_rate }};
+
+  function recalc() {
+    var b  = parseFloat(boxesEl.value);
+    var u  = parseFloat(upbEl.value);
+    if (!isNaN(b) && !isNaN(u) && b > 0 && u > 0) {
+      var qty = b * u;
+      qtyEl.value = qty;
+      qtyEl.readOnly = true;
+      qtyEl.style.background = '#f5f8ff';
+    } else {
+      qtyEl.readOnly = false;
+      qtyEl.style.background = '';
+    }
+    updateCost();
+  }
+
+  function updateCost() {
+    var qty = parseFloat(qtyEl.value);
+    var prc = parseFloat(priceEl.value);
+    if (!isNaN(qty) && !isNaN(prc) && qty > 0 && prc > 0) {
+      var cur = curEl.value;
+      var total, label;
+      if (cur === 'USD') {
+        total = (qty * prc).toFixed(2) + ' USD  ≈  ' +
+                Math.round(qty * prc * rate).toLocaleString('ru-RU') + ' UZS';
+      } else {
+        total = Math.round(qty * prc).toLocaleString('ru-RU') + ' UZS  ≈  $' +
+                (qty * prc / rate).toFixed(2);
+      }
+      costVal.textContent = total;
+      costLine.style.display = 'block';
+    } else {
+      costLine.style.display = 'none';
+    }
+  }
+
+  boxesEl.addEventListener('input', recalc);
+  upbEl.addEventListener('input', recalc);
+  qtyEl.addEventListener('input', updateCost);
+  priceEl.addEventListener('input', updateCost);
+  curEl.addEventListener('change', updateCost);
+})();
+</script>
 {% endblock %}
 

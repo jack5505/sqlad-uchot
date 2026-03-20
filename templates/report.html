@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Отчёт{% endblock %}
+
+{% block content %}
+<style>
+  @media print {
+    header, nav, .no-print { display: none !important; }
+    main { margin: 0; padding: 0; max-width: 100%; }
+    .report-card { box-shadow: none; border: none; padding: 0; }
+    body { background: #fff; font-size: 9pt; }
+    table { font-size: 8pt; }
+    th, td { padding: .2rem .3rem; }
+    .print-title { display: block !important; text-align: center; font-size: 11pt; margin-bottom: .5rem; }
+    .btn-print { display: none; }
+  }
+  .print-title { display: none; }
+  .report-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); padding: 1.5rem; margin-bottom: 1.5rem; }
+  .report-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  .report-table th, .report-table td { border: 1px solid #ccc; padding: .3rem .4rem; text-align: right; white-space: nowrap; }
+  .report-table th { background: #e8f0fe; color: #333; font-size: .75rem; text-align: center; }
+  .report-table td.name-col { text-align: left; white-space: normal; min-width: 120px; }
+  .report-table td.num-col { text-align: center; }
+  .report-table tr:hover td { background: #f5f8ff; }
+  .report-table .group-header { background: #f0f4ff; font-weight: 700; }
+  .report-table .total-row { background: #fff3cd; font-weight: 700; }
+  .section-header { background: #1a73e8 !important; color: #fff !important; text-align: center; }
+</style>
+
+<div class="report-card">
+  <h2 class="no-print">📊 Складской отчёт</h2>
+
+  <!-- Date range form -->
+  <form method="get" class="no-print" style="display:flex;gap:.75rem;align-items:flex-end;margin-bottom:1.25rem;flex-wrap:wrap;">
+    <div class="form-group" style="margin:0;">
+      <label for="start_date">Начало периода</label>
+      <input type="date" id="start_date" name="start_date" value="{{ start_date }}" style="width:160px;" />
+    </div>
+    <div class="form-group" style="margin:0;">
+      <label for="end_date">Конец периода</label>
+      <input type="date" id="end_date" name="end_date" value="{{ end_date }}" style="width:160px;" />
+    </div>
+    <button type="submit" class="btn btn-primary">Сформировать</button>
+    <button type="button" class="btn btn-print" onclick="window.print()"
+            style="background:#34a853;color:#fff;">🖨️ Печать</button>
+  </form>
+
+  <p class="print-title">
+    Складской отчёт за период с {{ start_date }} по {{ end_date }}<br/>
+    <small>Курс: 1 USD = {{ exchange_rate | fmt_uzs }} UZS</small>
+  </p>
+  <p class="no-print" style="font-size:.85rem;color:#555;margin-bottom:1rem;">
+    Период: <strong>{{ start_date }}</strong> — <strong>{{ end_date }}</strong> &nbsp;|&nbsp;
+    Курс: <strong>1 USD = {{ exchange_rate | fmt_uzs }} UZS</strong>
+  </p>
+
+  {% if rows %}
+  <div style="overflow-x:auto;">
+  <table class="report-table">
+    <thead>
+      <tr>
+        <th rowspan="2" style="min-width:30px;">№ п/п</th>
+        <th rowspan="2" style="min-width:120px;text-align:left;">Наименование</th>
+        <th rowspan="2">ШТ</th>
+        <th rowspan="2">Кол-во Коробок</th>
+        <th rowspan="2">Коробок Сколько шт</th>
+        <th rowspan="2">Цена за ед. ($)</th>
+        <th rowspan="2">Общая Стоимость ($)</th>
+        <th rowspan="2">Сумовой за шт</th>
+        <th rowspan="2">Коробка за шт сум</th>
+        <th rowspan="2">Общая стоимость (UZS)</th>
+        <th colspan="2" class="section-header">Остаток на начало</th>
+        <th colspan="2" class="section-header" style="background:#34a853 !important;">Приход</th>
+        <th colspan="2" class="section-header" style="background:#ea4335 !important;">Расход</th>
+        <th colspan="2" class="section-header">Остаток на конец</th>
+      </tr>
+      <tr>
+        <th>Кол-во</th><th>Сумма</th>
+        <th style="background:#e6f4ea;">Кол-во</th><th style="background:#e6f4ea;">Сумма</th>
+        <th style="background:#fce8e6;">Кол-во</th><th style="background:#fce8e6;">Сумма</th>
+        <th>Кол-во</th><th>Сумма</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set totals = namespace(
+        total_qty=0, income_boxes=0, cost_usd=0, cost_uzs=0,
+        open_boxes=0, open_val=0,
+        inc_boxes=0, inc_val=0,
+        exp_boxes=0, exp_val=0,
+        close_boxes=0, close_val=0
+      ) %}
+      {% for row in rows %}
+      {% if row.total_qty > 0 or row.opening_boxes != 0 or row.closing_boxes != 0 %}
+      {% set totals.total_qty    = totals.total_qty    + row.total_qty %}
+      {% set totals.income_boxes = totals.income_boxes + row.income_boxes %}
+      {% set totals.cost_usd     = totals.cost_usd     + row.total_cost_usd %}
+      {% set totals.cost_uzs     = totals.cost_uzs     + row.total_cost_uzs %}
+      {% set totals.open_boxes   = totals.open_boxes   + row.opening_boxes %}
+      {% set totals.open_val     = totals.open_val     + row.opening_val %}
+      {% set totals.inc_boxes    = totals.inc_boxes    + row.income_boxes_disp %}
+      {% set totals.inc_val      = totals.inc_val      + row.income_val %}
+      {% set totals.exp_boxes    = totals.exp_boxes    + row.expense_boxes_disp %}
+      {% set totals.exp_val      = totals.exp_val      + row.expense_val %}
+      {% set totals.close_boxes  = totals.close_boxes  + row.closing_boxes %}
+      {% set totals.close_val    = totals.close_val    + row.closing_val %}
+      <tr>
+        <td class="num-col">{{ loop.index }}</td>
+        <td class="name-col">{{ row.name }}</td>
+        <td>{{ row.total_qty | round(3) | string | replace('.0', '') if row.total_qty else '—' }}</td>
+        <td>{{ row.income_boxes | round(3) | string | replace('.0', '') if row.income_boxes else '—' }}</td>
+        <td>{{ row.units_per_box | round(3) | string | replace('.0', '') if row.units_per_box else '—' }}</td>
+        <td>{{ row.price_usd | round(4) | string | replace('.0', '') if row.price_usd else '—' }}</td>
+        <td>{{ row.total_cost_usd | fmt_usd if row.total_cost_usd else '—' }}</td>
+        <td>{{ row.price_uzs | fmt_uzs if row.price_uzs else '—' }}</td>
+        <td>{{ row.box_val | fmt_uzs if row.box_val else '—' }}</td>
+        <td>{{ row.total_cost_uzs | fmt_uzs if row.total_cost_uzs else '—' }}</td>
+
+        <td>{{ '%g' | format(row.opening_boxes) if row.opening_boxes else '0' }}</td>
+        <td>{{ row.opening_val | fmt_uzs }}</td>
+
+        <td style="color:#137333;font-weight:700;">
+          {{ '%g' | format(row.income_boxes_disp) if row.income_boxes_disp else '0' }}
+        </td>
+        <td style="color:#137333;font-weight:700;">{{ row.income_val | fmt_uzs }}</td>
+
+        <td style="color:#c5221f;font-weight:700;">
+          {{ '%g' | format(row.expense_boxes_disp) if row.expense_boxes_disp else '0' }}
+        </td>
+        <td style="color:#c5221f;font-weight:700;">{{ row.expense_val | fmt_uzs }}</td>
+
+        <td>{{ '%g' | format(row.closing_boxes) if row.closing_boxes else '0' }}</td>
+        <td>{{ row.closing_val | fmt_uzs }}</td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="total-row">
+        <td colspan="2" style="text-align:left;">Итого</td>
+        <td>{{ totals.total_qty | round(3) | string | replace('.0', '') }}</td>
+        <td>{{ totals.income_boxes | round(3) | string | replace('.0', '') }}</td>
+        <td>—</td>
+        <td>—</td>
+        <td>{{ totals.cost_usd | fmt_usd }}</td>
+        <td>—</td>
+        <td>—</td>
+        <td>{{ totals.cost_uzs | fmt_uzs }}</td>
+        <td>{{ totals.open_boxes | round(3) | string | replace('.0', '') }}</td>
+        <td>{{ totals.open_val | fmt_uzs }}</td>
+        <td>{{ totals.inc_boxes | round(3) | string | replace('.0', '') }}</td>
+        <td>{{ totals.inc_val | fmt_uzs }}</td>
+        <td>{{ totals.exp_boxes | round(3) | string | replace('.0', '') }}</td>
+        <td>{{ totals.exp_val | fmt_uzs }}</td>
+        <td>{{ totals.close_boxes | round(3) | string | replace('.0', '') }}</td>
+        <td>{{ totals.close_val | fmt_uzs }}</td>
+      </tr>
+    </tfoot>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">Нет данных за выбранный период.</p>
+  {% endif %}
+</div>
+{% endblock %}
