@@ -34,9 +34,11 @@
         <th>Товар</th>
         <th>Тип</th>
         <th>Количество</th>
+        <th>Коробок</th>
         <th>Цена</th>
         <th>Сумма (UZS)</th>
         <th>Сумма (USD)</th>
+        <th>Продажная сумма</th>
         <th>Примечание</th>
       </tr>
     </thead>
@@ -70,6 +72,13 @@
           {{ t.unit }}
         </td>
         <td>
+          {% if t.boxes is not none and t.boxes %}
+            {{ t.boxes | round(3) | string | replace('.0', '') }}
+          {% else %}
+            <span style="color:#aaa;">—</span>
+          {% endif %}
+        </td>
+        <td>
           {{ t.price | round(2) | string | replace('.0', '') }}
           <span style="font-size:.8rem;color:#888;">{{ t.currency }}</span>
         </td>
@@ -85,6 +94,18 @@
             <span class="balance-positive">+${{ line_usd | fmt_usd }}</span>
           {% else %}
             <span class="balance-negative">−${{ line_usd | fmt_usd }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if t.type == 'expense' and t.selling_price %}
+            {% set sc = t.selling_currency or 'UZS' %}
+            {% if sc == 'USD' %}
+              <span class="balance-positive">${{ t.selling_price | fmt_usd }}</span>
+            {% else %}
+              <span class="balance-positive">{{ t.selling_price | fmt_uzs }} UZS</span>
+            {% endif %}
+          {% else %}
+            <span style="color:#aaa;">—</span>
           {% endif %}
         </td>
         <td>{{ t.note or '—' }}</td>

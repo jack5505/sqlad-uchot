@@ -63,8 +63,8 @@ def test_income(client):
 
 def test_expense(client):
     pid = _add_product(client, "Краска", "л")
-    client.post("/income", data={"product_id": pid, "quantity": "10"})
-    rv = client.post("/expense", data={"product_id": pid, "quantity": "3"}, follow_redirects=True)
+    client.post("/income", data={"product_id": pid, "quantity": "10", "boxes": "2", "units_per_box": "5"})
+    rv = client.post("/expense", data={"product_id": pid, "boxes": "1"}, follow_redirects=True)
     assert rv.status_code == 200
     assert "зарегистрирован".encode() in rv.data
 
@@ -72,7 +72,7 @@ def test_expense(client):
 def test_balance_after_transactions(client):
     pid = _add_product(client, "Гвозди", "кг")
     client.post("/income", data={"product_id": pid, "quantity": "100"})
-    client.post("/expense", data={"product_id": pid, "quantity": "40"})
+    client.post("/expense", data={"product_id": pid, "boxes": "40"}, follow_redirects=True)
     import app as app_module
     stock = app_module.get_stock()
     row = next(r for r in stock if r["name"] == "Гвозди")
@@ -97,7 +97,7 @@ def test_income_no_product(client):
 def test_history_page(client):
     pid = _add_product(client, "Доска", "м")
     client.post("/income", data={"product_id": pid, "quantity": "50", "note": "склад 1"})
-    client.post("/expense", data={"product_id": pid, "quantity": "10"})
+    client.post("/expense", data={"product_id": pid, "boxes": "10"})
     rv = client.get("/history")
     assert rv.status_code == 200
     assert "Доска".encode() in rv.data
@@ -338,8 +338,160 @@ def test_expense_invalid_product_id(client):
     """Expense with invalid product_id returns error, not 500."""
     rv = client.post(
         "/expense",
-        data={"product_id": "not-a-number", "quantity": "10"},
+        data={"product_id": "not-a-number", "boxes": "10"},
         follow_redirects=True,
     )
     assert rv.status_code == 200
     assert "Неверный идентификатор".encode() in rv.data
+
+
+# ── New expense feature tests ────────────────────────────────────────────────
+
+def test_expense_requires_boxes(client):
+    """Expense without boxes is rejected."""
+    pid = _add_product(client)
+    rv = client.post(
+        "/expense",
+        data={"product_id": pid},
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    assert "коробок".encode() in rv.data
+
+
+def test_expense_with_selling_price(client):
+    """Expense with selling_price is stored correctly."""
+    import app as app_module
+    pid = _add_product(client, "Товар Продажа", "шт")
+    client.post("/income", data={"product_id": pid, "quantity": "100"})
+    rv = client.post(
+        "/expense",
+        data={
+            "product_id": pid,
+            "boxes": "5",
+            "selling_price": "250000",
+            "selling_currency": "UZS",
+        },
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    assert "зарегистрирован".encode() in rv.data
+    with app_module.get_db() as conn:
+        t = conn.execute(
+            "SELECT quantity, boxes, selling_price, selling_currency"
+            " FROM transactions WHERE product_id=? AND type='expense'",
+            (pid,),
+        ).fetchone()
+    assert t["boxes"] == 5.0
+    assert t["selling_price"] == 250000.0
+    assert t["selling_currency"] == "UZS"
+
+
+def test_expense_selling_price_usd(client):
+    """Expense with USD selling price is stored correctly."""
+    import app as app_module
+    pid = _add_product(client, "Товар USD Продажа", "шт")
+    client.post("/income", data={"product_id": pid, "quantity": "50"})
+    client.post(
+        "/expense",
+        data={
+            "product_id": pid,
+            "boxes": "2",
+            "selling_price": "25.50",
+            "selling_currency": "USD",
+        },
+    )
+    with app_module.get_db() as conn:
+        t = conn.execute(
+            "SELECT selling_price, selling_currency FROM transactions"
+            " WHERE product_id=? AND type='expense'",
+            (pid,),
+        ).fetchone()
+    assert abs(t["selling_price"] - 25.50) < 0.01
+    assert t["selling_currency"] == "USD"
+
+
+def test_expense_multiple_products(client):
+    """Expense can register multiple products in one request."""
+    import app as app_module
+    pid1 = _add_product(client, "Мульти А", "шт")
+    pid2 = _add_product(client, "Мульти Б", "шт")
+    client.post("/income", data={"product_id": pid1, "quantity": "100"})
+    client.post("/income", data={"product_id": pid2, "quantity": "200"})
+
+    rv = client.post(
+        "/expense",
+        data={
+            "product_id": [str(pid1), str(pid2)],
+            "boxes": ["3", "7"],
+            "units_per_box": ["", ""],
+            "selling_price": ["10000", "20000"],
+            "selling_currency": ["UZS", "UZS"],
+            "note": ["", ""],
+        },
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    assert "зарегистрирован".encode() in rv.data
+
+    with app_module.get_db() as conn:
+        rows = conn.execute(
+            "SELECT product_id, boxes, selling_price FROM transactions"
+            " WHERE type='expense' ORDER BY product_id"
+        ).fetchall()
+    assert len(rows) == 2
+    assert rows[0]["boxes"] == 3.0
+    assert rows[0]["selling_price"] == 10000.0
+    assert rows[1]["boxes"] == 7.0
+    assert rows[1]["selling_price"] == 20000.0
+
+
+def test_expense_boxes_with_units_per_box_from_income(client):
+    """Expense uses units_per_box from last income to calculate quantity."""
+    import app as app_module
+    pid = _add_product(client, "Коробки Расход", "шт")
+    client.post("/income", data={
+        "product_id": pid, "boxes": "10", "units_per_box": "24", "quantity": "",
+    })
+    client.post("/expense", data={"product_id": pid, "boxes": "2"})
+    with app_module.get_db() as conn:
+        t = conn.execute(
+            "SELECT quantity, boxes FROM transactions WHERE product_id=? AND type='expense'",
+            (pid,),
+        ).fetchone()
+    assert t["boxes"] == 2.0
+    assert t["quantity"] == 48.0  # 2 boxes × 24 units/box
+
+
+def test_expense_stock_includes_selling_totals(client):
+    """get_stock() computes selling totals from expense transactions."""
+    import app as app_module
+    client.post("/settings", data={"exchange_rate": "10000"})
+    pid = _add_product(client, "Продажа Итого", "шт")
+    client.post("/income", data={"product_id": pid, "quantity": "100"})
+    client.post("/expense", data={
+        "product_id": pid,
+        "boxes": "10",
+        "selling_price": "500000",
+        "selling_currency": "UZS",
+    })
+    stock = app_module.get_stock()
+    row = next(r for r in stock if r["name"] == "Продажа Итого")
+    assert abs(row["total_selling_uzs"] - 500000.0) < 1.0
+    assert abs(row["total_selling_usd"] - 50.0) < 0.01
+
+
+def test_history_shows_selling_price(client):
+    """History page displays selling price for expense transactions."""
+    pid = _add_product(client, "Продажа История", "шт")
+    client.post("/income", data={"product_id": pid, "quantity": "50"})
+    client.post("/expense", data={
+        "product_id": pid,
+        "boxes": "5",
+        "selling_price": "99000",
+        "selling_currency": "UZS",
+    })
+    rv = client.get("/history")
+    assert rv.status_code == 200
+    assert "99".encode() in rv.data
+
