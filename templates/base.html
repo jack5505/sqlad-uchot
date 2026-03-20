@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Склад Учёт{% block title_suffix %}{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #f0f2f5;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a73e8;
+      color: #fff;
+      padding: 0 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      box-shadow: 0 2px 4px rgba(0,0,0,.2);
+    }
+
+    header h1 { font-size: 1.25rem; letter-spacing: .5px; }
+
+    nav a {
+      color: rgba(255,255,255,.85);
+      text-decoration: none;
+      margin-left: 1.25rem;
+      font-size: .95rem;
+      padding: .25rem .5rem;
+      border-radius: 4px;
+      transition: background .15s;
+    }
+    nav a:hover, nav a.active { background: rgba(255,255,255,.2); color: #fff; }
+
+    main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    h2 { font-size: 1.2rem; margin-bottom: 1rem; color: #1a73e8; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid #e8eaed; }
+    th { font-size: .85rem; text-transform: uppercase; color: #888; background: #fafafa; }
+    tr:hover td { background: #f5f8ff; }
+
+    .badge {
+      display: inline-block;
+      padding: .2rem .55rem;
+      border-radius: 12px;
+      font-size: .8rem;
+      font-weight: 600;
+    }
+    .badge-income  { background: #e6f4ea; color: #137333; }
+    .badge-expense { background: #fce8e6; color: #c5221f; }
+    .badge-zero    { background: #f1f3f4; color: #5f6368; }
+
+    .balance-positive { color: #137333; font-weight: 700; }
+    .balance-zero     { color: #5f6368; }
+    .balance-negative { color: #c5221f; font-weight: 700; }
+
+    form .form-group { margin-bottom: 1rem; }
+    form label { display: block; font-size: .9rem; margin-bottom: .35rem; color: #555; }
+    form input, form select, form textarea {
+      width: 100%; padding: .55rem .75rem;
+      border: 1px solid #dadce0; border-radius: 6px;
+      font-size: .95rem; transition: border-color .15s;
+    }
+    form input:focus, form select:focus, form textarea:focus {
+      outline: none; border-color: #1a73e8;
+    }
+
+    .btn {
+      display: inline-block; padding: .55rem 1.25rem;
+      border: none; border-radius: 6px; cursor: pointer;
+      font-size: .95rem; font-weight: 600; text-decoration: none;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: #1a73e8; color: #fff; }
+    .btn-success { background: #34a853; color: #fff; }
+    .btn-danger  { background: #ea4335; color: #fff; font-size: .8rem; padding: .35rem .75rem; }
+
+    .alert {
+      padding: .75rem 1rem; border-radius: 6px;
+      margin-bottom: 1rem; font-size: .9rem;
+    }
+    .alert-success { background: #e6f4ea; color: #137333; border: 1px solid #b7dfbe; }
+    .alert-danger  { background: #fce8e6; color: #c5221f; border: 1px solid #f5c6c5; }
+    .alert-warning { background: #fef7e0; color: #b06000; border: 1px solid #fdd663; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .stat-card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      padding: 1.25rem 1.5rem;
+      text-align: center;
+    }
+    .stat-card .stat-value { font-size: 2rem; font-weight: 700; color: #1a73e8; }
+    .stat-card .stat-label { font-size: .85rem; color: #888; margin-top: .25rem; }
+
+    .empty { text-align: center; color: #888; padding: 2rem; font-size: .95rem; }
+
+    select[name="product_id"] { max-width: 400px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>📦 Склад Учёт</h1>
+  <nav>
+    <a href="{{ url_for('index') }}"    {% if request.endpoint == 'index' %}class="active"{% endif %}>Остатки</a>
+    <a href="{{ url_for('income') }}"   {% if request.endpoint == 'income' %}class="active"{% endif %}>Приход</a>
+    <a href="{{ url_for('expense') }}"  {% if request.endpoint == 'expense' %}class="active"{% endif %}>Расход</a>
+    <a href="{{ url_for('history') }}"  {% if request.endpoint == 'history' %}class="active"{% endif %}>История</a>
+    <a href="{{ url_for('products') }}" {% if request.endpoint == 'products' %}class="active"{% endif %}>Товары</a>
+  </nav>
+</header>
+
+<main>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

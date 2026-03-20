@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title_suffix %} — История{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>История операций</h2>
+  <form method="get" style="display:flex;gap:.75rem;align-items:flex-end;margin-bottom:1rem;flex-wrap:wrap;">
+    <div class="form-group" style="margin:0;flex:1;min-width:200px;">
+      <label for="product_id">Фильтр по товару</label>
+      <select name="product_id" id="product_id">
+        <option value="">— все товары —</option>
+        {% for p in products %}
+        <option value="{{ p.id }}" {% if selected_product == p.id | string %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary" style="height:38px;">Фильтр</button>
+    {% if selected_product %}
+    <a href="{{ url_for('history') }}" class="btn" style="background:#f1f3f4;color:#333;height:38px;line-height:1.7;">Сбросить</a>
+    {% endif %}
+  </form>
+
+  {% if transactions %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Дата</th>
+        <th>Товар</th>
+        <th>Тип</th>
+        <th>Количество</th>
+        <th>Примечание</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in transactions %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ t.created_at[:16] | replace('T', ' ') }}</td>
+        <td>{{ t.product_name }}</td>
+        <td>
+          {% if t.type == 'income' %}
+            <span class="badge badge-income">Приход</span>
+          {% else %}
+            <span class="badge badge-expense">Расход</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if t.type == 'income' %}
+            <span class="balance-positive">+{{ t.quantity | round(3) | string | replace('.0', '') }}</span>
+          {% else %}
+            <span class="balance-negative">−{{ t.quantity | round(3) | string | replace('.0', '') }}</span>
+          {% endif %}
+          {{ t.unit }}
+        </td>
+        <td>{{ t.note or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">Операций не найдено.</p>
+  {% endif %}
+</div>
+{% endblock %}
