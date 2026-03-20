@@ -29,6 +29,8 @@
         <th>Товар</th>
         <th>Тип</th>
         <th>Количество</th>
+        <th>Цена</th>
+        <th>Сумма</th>
         <th>Примечание</th>
       </tr>
     </thead>
@@ -36,7 +38,7 @@
       {% for t in transactions %}
       <tr>
         <td>{{ loop.index }}</td>
-        <td>{{ t.created_at[:16] | replace('T', ' ') }}</td>
+        <td>{{ (t.created_at | string)[:16] | replace('T', ' ') }}</td>
         <td>{{ t.product_name }}</td>
         <td>
           {% if t.type == 'income' %}
@@ -52,6 +54,15 @@
             <span class="balance-negative">−{{ t.quantity | round(3) | string | replace('.0', '') }}</span>
           {% endif %}
           {{ t.unit }}
+        </td>
+        <td>{{ t.price | round(2) | string | replace('.0', '') }}</td>
+        <td>
+          {% set line_sum = t.quantity * t.price %}
+          {% if t.type == 'income' %}
+            <span class="balance-positive">+{{ line_sum | round(2) | string | replace('.0', '') }}</span>
+          {% else %}
+            <span class="balance-negative">−{{ line_sum | round(2) | string | replace('.0', '') }}</span>
+          {% endif %}
         </td>
         <td>{{ t.note or '—' }}</td>
       </tr>

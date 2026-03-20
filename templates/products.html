@@ -36,7 +36,7 @@
         <td>{{ loop.index }}</td>
         <td>{{ p.name }}</td>
         <td>{{ p.unit }}</td>
-        <td>{{ p.created_at[:10] }}</td>
+        <td>{{ (p.created_at | string)[:10] }}</td>
         <td>
           <form method="post" action="{{ url_for('delete_product', product_id=p.id) }}"
                 onsubmit="return confirm('Удалить товар «{{ p.name }}» и все его транзакции?')">
