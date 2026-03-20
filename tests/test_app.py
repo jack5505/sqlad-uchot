@@ -477,8 +477,8 @@ def test_expense_stock_includes_selling_totals(client):
     })
     stock = app_module.get_stock()
     row = next(r for r in stock if r["name"] == "Продажа Итого")
-    assert abs(row["total_selling_uzs"] - 500000.0) < 1.0
-    assert abs(row["total_selling_usd"] - 50.0) < 0.01
+    assert abs(row["total_selling_uzs"] - 5000000.0) < 1.0
+    assert abs(row["total_selling_usd"] - 500.0) < 0.01
 
 
 def test_history_shows_selling_price(client):
@@ -493,5 +493,6 @@ def test_history_shows_selling_price(client):
     })
     rv = client.get("/history")
     assert rv.status_code == 200
-    assert "99".encode() in rv.data
+    # selling_price=99000 × boxes=5 = 495000 UZS total; fmt_uzs uses narrow no-break space
+    assert "495\u202f000".encode("utf-8") in rv.data
 

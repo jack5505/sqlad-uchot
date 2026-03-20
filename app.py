@@ -227,9 +227,9 @@ def get_stock():
                    COALESCE(SUM(CASE WHEN t.type='expense' AND COALESCE(t.currency,'UZS')='USD'
                                      THEN t.quantity * t.price ELSE 0 END), 0) AS expense_usd_native,
                    COALESCE(SUM(CASE WHEN t.type='expense' AND COALESCE(t.selling_currency,'UZS')='UZS'
-                                     THEN COALESCE(t.selling_price,0) ELSE 0 END), 0) AS selling_uzs_native,
+                                     THEN COALESCE(t.selling_price,0) * COALESCE(t.boxes,1) ELSE 0 END), 0) AS selling_uzs_native,
                    COALESCE(SUM(CASE WHEN t.type='expense' AND COALESCE(t.selling_currency,'UZS')='USD'
-                                     THEN COALESCE(t.selling_price,0) ELSE 0 END), 0) AS selling_usd_native,
+                                     THEN COALESCE(t.selling_price,0) * COALESCE(t.boxes,1) ELSE 0 END), 0) AS selling_usd_native,
                    (SELECT units_per_box FROM transactions
                     WHERE product_id = p.id AND units_per_box IS NOT NULL
                     ORDER BY created_at DESC LIMIT 1) AS last_units_per_box
