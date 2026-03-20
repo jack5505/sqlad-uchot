@@ -78,11 +78,27 @@ def init_db():
                 product_id INTEGER NOT NULL,
                 type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
                 quantity REAL NOT NULL CHECK(quantity > 0),
+                price REAL NOT NULL DEFAULT 0,
                 note TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (product_id) REFERENCES products(id)
             )
         """)
+
+    # Migration: add price column to existing databases that lack it
+    if not _use_postgres:
+        with get_db() as conn:
+            col_names = [row[1] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()]
+        if "price" not in col_names:
+            with get_db() as conn:
+                conn.execute(
+                    "ALTER TABLE transactions ADD COLUMN price REAL NOT NULL DEFAULT 0"
+                )
+    else:
+        with get_db() as conn:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS price REAL NOT NULL DEFAULT 0"
+            )
 
 
 init_db()
@@ -96,7 +112,11 @@ def get_stock():
                    COALESCE(SUM(CASE WHEN t.type='income' THEN t.quantity ELSE 0 END), 0) AS total_income,
                    COALESCE(SUM(CASE WHEN t.type='expense' THEN t.quantity ELSE 0 END), 0) AS total_expense,
                    COALESCE(SUM(CASE WHEN t.type='income' THEN t.quantity
-                                     WHEN t.type='expense' THEN -t.quantity ELSE 0 END), 0) AS balance
+                                     WHEN t.type='expense' THEN -t.quantity ELSE 0 END), 0) AS balance,
+                   COALESCE(SUM(CASE WHEN t.type='income' THEN t.quantity * t.price ELSE 0 END), 0) AS total_income_sum,
+                   COALESCE(SUM(CASE WHEN t.type='expense' THEN t.quantity * t.price ELSE 0 END), 0) AS total_expense_sum,
+                   COALESCE(SUM(CASE WHEN t.type='income' THEN t.quantity * t.price
+                                     WHEN t.type='expense' THEN -t.quantity * t.price ELSE 0 END), 0) AS balance_sum
             FROM products p
             LEFT JOIN transactions t ON p.id = t.product_id
             GROUP BY p.id, p.name, p.unit
@@ -157,6 +177,7 @@ def income():
     if request.method == "POST":
         product_id = request.form.get("product_id")
         quantity = request.form.get("quantity", "").strip()
+        price = request.form.get("price", "0").strip()
         note = request.form.get("note", "").strip()
         error = None
         if not product_id:
@@ -168,13 +189,20 @@ def income():
                     raise ValueError
             except (ValueError, TypeError):
                 error = "Количество должно быть положительным числом."
+        if error is None:
+            try:
+                prc = float(price) if price else 0.0
+                if prc < 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                error = "Цена должна быть неотрицательным числом."
         if error:
             flash(error, "danger")
         else:
             with get_db() as conn:
                 conn.execute(
-                    "INSERT INTO transactions (product_id, type, quantity, note) VALUES (?, 'income', ?, ?)",
-                    (product_id, qty, note or None),
+                    "INSERT INTO transactions (product_id, type, quantity, price, note) VALUES (?, 'income', ?, ?, ?)",
+                    (product_id, qty, prc, note or None),
                 )
             flash("Приход зарегистрирован.", "success")
         return redirect(url_for("income"))
@@ -191,6 +219,7 @@ def expense():
     if request.method == "POST":
         product_id = request.form.get("product_id")
         quantity = request.form.get("quantity", "").strip()
+        price = request.form.get("price", "0").strip()
         note = request.form.get("note", "").strip()
         error = None
         if not product_id:
@@ -202,7 +231,14 @@ def expense():
                     raise ValueError
             except (ValueError, TypeError):
                 error = "Количество должно быть положительным числом."
-        if not error:
+        if error is None:
+            try:
+                prc = float(price) if price else 0.0
+                if prc < 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                error = "Цена должна быть неотрицательным числом."
+        if error is None:
             with get_db() as conn:
                 product = conn.execute(
                     "SELECT id FROM products WHERE id=?", (product_id,)
@@ -214,8 +250,8 @@ def expense():
         else:
             with get_db() as conn:
                 conn.execute(
-                    "INSERT INTO transactions (product_id, type, quantity, note) VALUES (?, 'expense', ?, ?)",
-                    (product_id, qty, note or None),
+                    "INSERT INTO transactions (product_id, type, quantity, price, note) VALUES (?, 'expense', ?, ?, ?)",
+                    (product_id, qty, prc, note or None),
                 )
             flash("Расход зарегистрирован.", "success")
         return redirect(url_for("expense"))
@@ -235,7 +271,7 @@ def history():
             "SELECT id, name FROM products ORDER BY name"
         ).fetchall()
         query = """
-            SELECT t.id, p.name AS product_name, p.unit, t.type, t.quantity, t.note, t.created_at
+            SELECT t.id, p.name AS product_name, p.unit, t.type, t.quantity, t.price, t.note, t.created_at
             FROM transactions t
             JOIN products p ON p.id = t.product_id
         """

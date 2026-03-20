@@ -4,6 +4,7 @@
 {% block content %}
 {% set total_products = stock | length %}
 {% set products_in_stock = stock | selectattr('balance', 'gt', 0) | list | length %}
+{% set total_warehouse_sum = stock | sum(attribute='balance_sum') %}
 
 <div class="stats-grid">
   <div class="stat-card">
@@ -13,6 +14,10 @@
   <div class="stat-card">
     <div class="stat-value">{{ products_in_stock }}</div>
     <div class="stat-label">Товаров в наличии</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ total_warehouse_sum | round(2) | string | replace('.0', '') }}</div>
+    <div class="stat-label">Общая стоимость склада</div>
   </div>
 </div>
 
@@ -28,6 +33,9 @@
         <th>Приход</th>
         <th>Расход</th>
         <th>Остаток</th>
+        <th>Сумма прихода</th>
+        <th>Сумма расхода</th>
+        <th>Стоимость</th>
       </tr>
     </thead>
     <tbody>
@@ -43,6 +51,17 @@
             <span class="balance-positive">{{ row.balance | round(3) | string | replace('.0', '') }}</span>
           {% elif row.balance < 0 %}
             <span class="balance-negative">{{ row.balance | round(3) | string | replace('.0', '') }}</span>
+          {% else %}
+            <span class="balance-zero">0</span>
+          {% endif %}
+        </td>
+        <td class="balance-positive">{{ row.total_income_sum | round(2) | string | replace('.0', '') }}</td>
+        <td class="balance-negative">{{ row.total_expense_sum | round(2) | string | replace('.0', '') }}</td>
+        <td>
+          {% if row.balance_sum > 0 %}
+            <span class="balance-positive">{{ row.balance_sum | round(2) | string | replace('.0', '') }}</span>
+          {% elif row.balance_sum < 0 %}
+            <span class="balance-negative">{{ row.balance_sum | round(2) | string | replace('.0', '') }}</span>
           {% else %}
             <span class="balance-zero">0</span>
           {% endif %}
