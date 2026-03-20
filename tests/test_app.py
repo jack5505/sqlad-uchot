@@ -240,3 +240,64 @@ def test_index_shows_exchange_rate(client):
     assert rv.status_code == 200
     # fmt_uzs uses narrow no-break space (\u202f) as thousands separator
     assert "11\u202f111".encode("utf-8") in rv.data
+
+
+# ── Boxes / units_per_box tests ─────────────────────────────────────────────
+
+def test_income_with_boxes(client):
+    """Income registered with boxes and units_per_box stores correct quantity."""
+    import app as app_module
+    pid = _add_product(client, "Коробочный Товар", "шт")
+    rv = client.post(
+        "/income",
+        data={"product_id": pid, "boxes": "10", "units_per_box": "30", "quantity": "",
+              "price": "0.35", "currency": "USD"},
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    assert "зарегистрирован".encode() in rv.data
+    with app_module.get_db() as conn:
+        t = conn.execute(
+            "SELECT quantity, boxes, units_per_box FROM transactions WHERE product_id=?", (pid,)
+        ).fetchone()
+    assert t["quantity"] == 300.0   # 10 × 30
+    assert t["boxes"] == 10.0
+    assert t["units_per_box"] == 30.0
+
+
+def test_income_boxes_invalid(client):
+    pid = _add_product(client)
+    rv = client.post(
+        "/income",
+        data={"product_id": pid, "boxes": "-5", "units_per_box": "30", "quantity": ""},
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    assert "коробок".encode() in rv.data
+
+
+def test_settings_decimal_exchange_rate(client):
+    """Exchange rate should accept decimal values."""
+    rv = client.post("/settings", data={"exchange_rate": "12699.14"}, follow_redirects=True)
+    assert rv.status_code == 200
+    import app as app_module
+    rate = app_module.get_exchange_rate()
+    assert abs(rate - 12699.14) < 0.001
+
+
+def test_report_page(client):
+    """Report page loads and shows product data."""
+    pid = _add_product(client, "Отчёт Товар", "шт")
+    client.post("/income", data={"product_id": pid, "quantity": "100", "price": "1", "currency": "USD"})
+    rv = client.get("/report")
+    assert rv.status_code == 200
+    assert "Отчёт Товар".encode() in rv.data
+
+
+def test_report_date_filter(client):
+    """Report respects date range filter."""
+    pid = _add_product(client, "Дата Товар", "шт")
+    client.post("/income", data={"product_id": pid, "quantity": "50", "price": "1", "currency": "USD"})
+    # Request report for a future period where no transactions exist
+    rv = client.get("/report?start_date=2099-01-01&end_date=2099-12-31")
+    assert rv.status_code == 200

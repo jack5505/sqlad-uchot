@@ -121,6 +121,16 @@ def init_db():
                 conn.execute(
                     "ALTER TABLE transactions ADD COLUMN currency TEXT NOT NULL DEFAULT 'UZS'"
                 )
+        if "boxes" not in col_names:
+            with get_db() as conn:
+                conn.execute(
+                    "ALTER TABLE transactions ADD COLUMN boxes REAL DEFAULT NULL"
+                )
+        if "units_per_box" not in col_names:
+            with get_db() as conn:
+                conn.execute(
+                    "ALTER TABLE transactions ADD COLUMN units_per_box REAL DEFAULT NULL"
+                )
     else:
         with get_db() as conn:
             conn.execute(
@@ -129,6 +139,14 @@ def init_db():
         with get_db() as conn:
             conn.execute(
                 "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'UZS'"
+            )
+        with get_db() as conn:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS boxes REAL DEFAULT NULL"
+            )
+        with get_db() as conn:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS units_per_box REAL DEFAULT NULL"
             )
 
 
@@ -263,21 +281,49 @@ def income():
     if request.method == "POST":
         product_id = request.form.get("product_id")
         quantity = request.form.get("quantity", "").strip()
+        boxes_str = request.form.get("boxes", "").strip()
+        units_per_box_str = request.form.get("units_per_box", "").strip()
         price = request.form.get("price", "0").strip()
         currency = request.form.get("currency", "UZS").strip()
         if currency not in ("UZS", "USD"):
             currency = "UZS"
         note = request.form.get("note", "").strip()
         error = None
+
         if not product_id:
             error = "Выберите товар."
-        else:
+
+        boxes = None
+        units_per_box = None
+
+        # Parse optional boxes / units_per_box
+        if error is None and boxes_str:
             try:
-                qty = float(quantity)
-                if qty <= 0:
+                boxes = float(boxes_str)
+                if boxes <= 0:
                     raise ValueError
             except (ValueError, TypeError):
-                error = "Количество должно быть положительным числом."
+                error = "Количество коробок должно быть положительным числом."
+        if error is None and units_per_box_str:
+            try:
+                units_per_box = float(units_per_box_str)
+                if units_per_box <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                error = "Штук в коробке должно быть положительным числом."
+
+        # If both boxes and units_per_box are given, derive quantity from them
+        if error is None:
+            if boxes is not None and units_per_box is not None:
+                qty = boxes * units_per_box
+            else:
+                try:
+                    qty = float(quantity)
+                    if qty <= 0:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    error = "Количество должно быть положительным числом."
+
         if error is None:
             try:
                 prc = float(price) if price else 0.0
@@ -290,9 +336,9 @@ def income():
         else:
             with get_db() as conn:
                 conn.execute(
-                    "INSERT INTO transactions (product_id, type, quantity, price, currency, note)"
-                    " VALUES (?, 'income', ?, ?, ?, ?)",
-                    (product_id, qty, prc, currency, note or None),
+                    "INSERT INTO transactions (product_id, type, quantity, boxes, units_per_box, price, currency, note)"
+                    " VALUES (?, 'income', ?, ?, ?, ?, ?, ?)",
+                    (product_id, qty, boxes, units_per_box, prc, currency, note or None),
                 )
             flash("Приход зарегистрирован.", "success")
         return redirect(url_for("income"))
@@ -315,21 +361,47 @@ def expense():
     if request.method == "POST":
         product_id = request.form.get("product_id")
         quantity = request.form.get("quantity", "").strip()
+        boxes_str = request.form.get("boxes", "").strip()
+        units_per_box_str = request.form.get("units_per_box", "").strip()
         price = request.form.get("price", "0").strip()
         currency = request.form.get("currency", "UZS").strip()
         if currency not in ("UZS", "USD"):
             currency = "UZS"
         note = request.form.get("note", "").strip()
         error = None
+
         if not product_id:
             error = "Выберите товар."
-        else:
+
+        boxes = None
+        units_per_box = None
+
+        if error is None and boxes_str:
             try:
-                qty = float(quantity)
-                if qty <= 0:
+                boxes = float(boxes_str)
+                if boxes <= 0:
                     raise ValueError
             except (ValueError, TypeError):
-                error = "Количество должно быть положительным числом."
+                error = "Количество коробок должно быть положительным числом."
+        if error is None and units_per_box_str:
+            try:
+                units_per_box = float(units_per_box_str)
+                if units_per_box <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                error = "Штук в коробке должно быть положительным числом."
+
+        if error is None:
+            if boxes is not None and units_per_box is not None:
+                qty = boxes * units_per_box
+            else:
+                try:
+                    qty = float(quantity)
+                    if qty <= 0:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    error = "Количество должно быть положительным числом."
+
         if error is None:
             try:
                 prc = float(price) if price else 0.0
@@ -349,9 +421,9 @@ def expense():
         else:
             with get_db() as conn:
                 conn.execute(
-                    "INSERT INTO transactions (product_id, type, quantity, price, currency, note)"
-                    " VALUES (?, 'expense', ?, ?, ?, ?)",
-                    (product_id, qty, prc, currency, note or None),
+                    "INSERT INTO transactions (product_id, type, quantity, boxes, units_per_box, price, currency, note)"
+                    " VALUES (?, 'expense', ?, ?, ?, ?, ?, ?)",
+                    (product_id, qty, boxes, units_per_box, prc, currency, note or None),
                 )
             flash("Расход зарегистрирован.", "success")
         return redirect(url_for("expense"))
@@ -414,11 +486,138 @@ def settings():
                 "UPDATE settings SET value=? WHERE key='exchange_rate'",
                 (str(rate),),
             )
-        flash(f"Курс обновлён: 1 USD = {rate:,.0f} UZS", "success")
+        flash(f"Курс обновлён: 1 USD = {rate:g} UZS", "success")
         return redirect(url_for("settings"))
 
     rate = get_exchange_rate()
     return render_template("settings.html", exchange_rate=rate)
+
+
+@app.route("/report")
+def report():
+    from datetime import date, timedelta
+    today = date.today()
+    default_start = today.replace(day=1).isoformat()
+    default_end = today.isoformat()
+    start_date = request.args.get("start_date", default_start)
+    end_date = request.args.get("end_date", default_end)
+
+    rate = get_exchange_rate()
+
+    with get_db() as conn:
+        products = conn.execute(
+            "SELECT id, name, unit FROM products ORDER BY name"
+        ).fetchall()
+
+    report_rows = []
+    for p in products:
+        pid = p["id"]
+        with get_db() as conn:
+            txns = conn.execute(
+                """
+                SELECT type, quantity, boxes, units_per_box, price,
+                       COALESCE(currency, 'UZS') AS currency,
+                       DATE(created_at) AS tx_date
+                FROM transactions
+                WHERE product_id = ?
+                ORDER BY created_at
+                """,
+                (pid,),
+            ).fetchall()
+
+        opening_qty = 0.0
+        opening_val = 0.0
+        income_qty = 0.0
+        income_boxes = 0.0
+        income_val = 0.0
+        expense_qty = 0.0
+        expense_boxes = 0.0
+        expense_val = 0.0
+        last_units_per_box = None
+        last_price_usd = None
+
+        for t in txns:
+            q = t["quantity"] or 0.0
+            bx = t["boxes"] or 0.0
+            upb = t["units_per_box"]
+            prc = t["price"] or 0.0
+            cur = t["currency"]
+
+            if cur == "USD":
+                val_uzs = q * prc * rate
+            else:
+                val_uzs = q * prc
+
+            if t["tx_date"] < start_date:
+                # Before the period → opening balance
+                if t["type"] == "income":
+                    opening_qty += q
+                    opening_val += val_uzs
+                else:
+                    opening_qty -= q
+                    opening_val -= val_uzs
+            elif t["tx_date"] <= end_date:
+                # During the period
+                if t["type"] == "income":
+                    income_qty += q
+                    income_boxes += bx
+                    income_val += val_uzs
+                    if upb:
+                        last_units_per_box = upb
+                    if prc > 0:
+                        if cur == "USD":
+                            last_price_usd = prc
+                        else:
+                            last_price_usd = prc / rate if rate > 0 else None
+                else:
+                    expense_qty += q
+                    expense_boxes += bx
+                    expense_val += val_uzs
+
+        closing_qty = opening_qty + income_qty - expense_qty
+        closing_val = opening_val + income_val - expense_val
+
+        upb = last_units_per_box
+        price_uzs = last_price_usd * rate if last_price_usd and rate > 0 else None
+        box_val = upb * price_uzs if upb and price_uzs else None
+        total_cost_uzs = income_qty * price_uzs if price_uzs else income_val
+
+        # Convert quantities to boxes for display when units_per_box is known
+        if upb and upb > 0:
+            opening_boxes_disp = opening_qty / upb
+            closing_boxes_disp = closing_qty / upb
+        else:
+            opening_boxes_disp = opening_qty
+            closing_boxes_disp = closing_qty
+
+        report_rows.append({
+            "name": p["name"],
+            "unit": p["unit"],
+            "total_qty": income_qty,
+            "income_boxes": income_boxes,
+            "units_per_box": upb,
+            "price_usd": last_price_usd,
+            "total_cost_usd": income_qty * last_price_usd if last_price_usd else 0.0,
+            "price_uzs": price_uzs,
+            "box_val": box_val,
+            "total_cost_uzs": total_cost_uzs,
+            "opening_boxes": opening_boxes_disp,
+            "opening_val": opening_val,
+            "income_boxes_disp": income_boxes if income_boxes else income_qty,
+            "income_val": income_val,
+            "expense_boxes_disp": expense_boxes if expense_boxes else expense_qty,
+            "expense_val": expense_val,
+            "closing_boxes": closing_boxes_disp,
+            "closing_val": closing_val,
+        })
+
+    return render_template(
+        "report.html",
+        rows=report_rows,
+        start_date=start_date,
+        end_date=end_date,
+        exchange_rate=rate,
+    )
 
 
 if __name__ == "__main__":
