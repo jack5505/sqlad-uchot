@@ -68,8 +68,11 @@ def init_db():
                 name TEXT NOT NULL UNIQUE,
                 unit TEXT NOT NULL DEFAULT 'шт',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+            )
+        """)
 
+    with get_db() as conn:
+        conn.executescript(f"""
             CREATE TABLE IF NOT EXISTS transactions (
                 id {id_type},
                 product_id INTEGER NOT NULL,
@@ -78,7 +81,7 @@ def init_db():
                 note TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (product_id) REFERENCES products(id)
-            );
+            )
         """)
 
 
