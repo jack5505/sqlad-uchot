@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Товары{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>Добавить товар</h2>
+  <form method="post">
+    <div class="form-group">
+      <label for="name">Название товара *</label>
+      <input type="text" id="name" name="name" placeholder="Например: Цемент" required maxlength="200" />
+    </div>
+    <div class="form-group">
+      <label for="unit">Единица измерения</label>
+      <input type="text" id="unit" name="unit" placeholder="шт / кг / л / м² …" maxlength="20" value="шт" />
+    </div>
+    <button type="submit" class="btn btn-primary">Добавить</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Список товаров</h2>
+  {% if products %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Название</th>
+        <th>Ед. изм.</th>
+        <th>Добавлен</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in products %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ p.name }}</td>
+        <td>{{ p.unit }}</td>
+        <td>{{ p.created_at[:10] }}</td>
+        <td>
+          <form method="post" action="{{ url_for('delete_product', product_id=p.id) }}"
+                onsubmit="return confirm('Удалить товар «{{ p.name }}» и все его транзакции?')">
+            <button type="submit" class="btn btn-danger">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">Список товаров пуст.</p>
+  {% endif %}
+</div>
+{% endblock %}

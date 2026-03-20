@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Остатки{% endblock %}
+
+{% block content %}
+{% set total_products = stock | length %}
+{% set products_in_stock = stock | selectattr('balance', 'gt', 0) | list | length %}
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-value">{{ total_products }}</div>
+    <div class="stat-label">Всего товаров</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ products_in_stock }}</div>
+    <div class="stat-label">Товаров в наличии</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Текущие остатки</h2>
+  {% if stock %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Товар</th>
+        <th>Ед. изм.</th>
+        <th>Приход</th>
+        <th>Расход</th>
+        <th>Остаток</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in stock %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ row.name }}</td>
+        <td>{{ row.unit }}</td>
+        <td class="balance-positive">{{ row.total_income | round(3) | string | replace('.0', '') }}</td>
+        <td class="balance-negative">{{ row.total_expense | round(3) | string | replace('.0', '') }}</td>
+        <td>
+          {% if row.balance > 0 %}
+            <span class="balance-positive">{{ row.balance | round(3) | string | replace('.0', '') }}</span>
+          {% elif row.balance < 0 %}
+            <span class="balance-negative">{{ row.balance | round(3) | string | replace('.0', '') }}</span>
+          {% else %}
+            <span class="balance-zero">0</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">Нет товаров. <a href="{{ url_for('products') }}">Добавьте товар</a>, затем зарегистрируйте <a href="{{ url_for('income') }}">приход</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}

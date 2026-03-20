@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title_suffix %} — {{ 'Приход' if tx_type == 'income' else 'Расход' }}{% endblock %}
+
+{% block content %}
+<div class="card">
+  {% if tx_type == 'income' %}
+    <h2>➕ Регистрация прихода</h2>
+  {% else %}
+    <h2>➖ Регистрация расхода</h2>
+  {% endif %}
+
+  {% if products %}
+  <form method="post">
+    <div class="form-group">
+      <label for="product_id">Товар *</label>
+      <select name="product_id" id="product_id" required>
+        <option value="">— выберите товар —</option>
+        {% for p in products %}
+        <option value="{{ p.id }}">{{ p.name }} ({{ p.unit }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="quantity">Количество *</label>
+      <input type="number" id="quantity" name="quantity" min="0.001" step="any" placeholder="0" required />
+    </div>
+    <div class="form-group">
+      <label for="note">Примечание</label>
+      <input type="text" id="note" name="note" placeholder="Необязательно" maxlength="300" />
+    </div>
+    {% if tx_type == 'income' %}
+      <button type="submit" class="btn btn-success">Зарегистрировать приход</button>
+    {% else %}
+      <button type="submit" class="btn btn-danger" style="font-size:.95rem;padding:.55rem 1.25rem;">Зарегистрировать расход</button>
+    {% endif %}
+  </form>
+  {% else %}
+  <p class="empty">Нет товаров. <a href="{{ url_for('products') }}">Сначала добавьте товар</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}
