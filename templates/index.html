@@ -47,6 +47,8 @@
         <th>Приход (кол-во)</th>
         <th>Расход (кол-во)</th>
         <th>Остаток (кол-во)</th>
+        <th>Остаток (коробок)</th>
+        <th>Штук в коробке</th>
         <th>Приход (сумма)</th>
         <th>Расход (сумма)</th>
         <th>Стоимость</th>
@@ -67,6 +69,26 @@
             <span class="balance-negative">{{ row.balance | round(3) | string | replace('.0', '') }}</span>
           {% else %}
             <span class="balance-zero">0</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.balance_boxes is not none %}
+            {% if row.balance_boxes > 0 %}
+              <span class="balance-positive">{{ row.balance_boxes | round(3) | string | replace('.0', '') }}</span>
+            {% elif row.balance_boxes < 0 %}
+              <span class="balance-negative">{{ row.balance_boxes | round(3) | string | replace('.0', '') }}</span>
+            {% else %}
+              <span class="balance-zero">0</span>
+            {% endif %}
+          {% else %}
+            <span style="color:#aaa;">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.last_units_per_box %}
+            {{ row.last_units_per_box | round(3) | string | replace('.0', '') }}
+          {% else %}
+            <span style="color:#aaa;">—</span>
           {% endif %}
         </td>
         <td class="balance-positive">
