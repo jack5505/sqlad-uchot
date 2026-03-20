@@ -130,6 +130,7 @@
     <a href="{{ url_for('expense') }}"  {% if request.endpoint == 'expense' %}class="active"{% endif %}>Расход</a>
     <a href="{{ url_for('history') }}"  {% if request.endpoint == 'history' %}class="active"{% endif %}>История</a>
     <a href="{{ url_for('products') }}" {% if request.endpoint == 'products' %}class="active"{% endif %}>Товары</a>
+    <a href="{{ url_for('settings') }}" {% if request.endpoint == 'settings' %}class="active"{% endif %}>⚙️ Настройки</a>
   </nav>
 </header>
 

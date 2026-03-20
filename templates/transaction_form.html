@@ -24,10 +24,23 @@
       <label for="quantity">Количество *</label>
       <input type="number" id="quantity" name="quantity" min="0.001" step="any" placeholder="0" required />
     </div>
-    <div class="form-group">
-      <label for="price">Цена за единицу</label>
-      <input type="number" id="price" name="price" min="0" step="any" placeholder="0.00" />
+    <div class="form-group" style="display:flex;gap:.75rem;align-items:flex-start;flex-wrap:wrap;">
+      <div style="flex:1;min-width:160px;">
+        <label for="price">Цена за единицу</label>
+        <input type="number" id="price" name="price" min="0" step="any" placeholder="0.00" />
+      </div>
+      <div style="min-width:160px;">
+        <label for="currency">Валюта</label>
+        <select name="currency" id="currency">
+          <option value="UZS">UZS (Сум)</option>
+          <option value="USD">USD (Доллар $)</option>
+        </select>
+      </div>
     </div>
+    <p style="font-size:.85rem;color:#888;margin-top:-.5rem;margin-bottom:1rem;">
+      Текущий курс: <strong>1 USD = {{ exchange_rate | fmt_uzs }} UZS</strong>
+      (<a href="{{ url_for('settings') }}" style="color:#1a73e8;">изменить</a>)
+    </p>
     <div class="form-group">
       <label for="note">Примечание</label>
       <input type="text" id="note" name="note" placeholder="Необязательно" maxlength="300" />
@@ -43,3 +56,4 @@
   {% endif %}
 </div>
 {% endblock %}
+
