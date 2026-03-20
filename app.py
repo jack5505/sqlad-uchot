@@ -15,10 +15,12 @@ if _use_postgres:
     # Use the broader IntegrityError base class so that UniqueViolation
     # (and any other integrity failures) are always caught.
     _DuplicateKeyError = psycopg2.IntegrityError
+    _DatabaseError = psycopg2.Error
 else:
     import sqlite3
     DATABASE = os.environ.get("DATABASE", "warehouse.db")
     _DuplicateKeyError = sqlite3.IntegrityError
+    _DatabaseError = sqlite3.Error
 
 
 class _PGWrapper:
@@ -290,8 +292,14 @@ def income():
         note = request.form.get("note", "").strip()
         error = None
 
+        pid = None
         if not product_id:
             error = "Выберите товар."
+        else:
+            try:
+                pid = int(product_id)
+            except (ValueError, TypeError):
+                error = "Неверный идентификатор товара."
 
         boxes = None
         units_per_box = None
@@ -334,13 +342,17 @@ def income():
         if error:
             flash(error, "danger")
         else:
-            with get_db() as conn:
-                conn.execute(
-                    "INSERT INTO transactions (product_id, type, quantity, boxes, units_per_box, price, currency, note)"
-                    " VALUES (?, 'income', ?, ?, ?, ?, ?, ?)",
-                    (product_id, qty, boxes, units_per_box, prc, currency, note or None),
-                )
-            flash("Приход зарегистрирован.", "success")
+            try:
+                with get_db() as conn:
+                    conn.execute(
+                        "INSERT INTO transactions (product_id, type, quantity, boxes, units_per_box, price, currency, note)"
+                        " VALUES (?, 'income', ?, ?, ?, ?, ?, ?)",
+                        (pid, qty, boxes, units_per_box, prc, currency, note or None),
+                    )
+                flash("Приход зарегистрирован.", "success")
+            except _DatabaseError:
+                app.logger.exception("Ошибка при регистрации прихода")
+                flash("Ошибка при регистрации прихода. Попробуйте ещё раз.", "danger")
         return redirect(url_for("income"))
 
     rate = get_exchange_rate()
@@ -370,8 +382,14 @@ def expense():
         note = request.form.get("note", "").strip()
         error = None
 
+        pid = None
         if not product_id:
             error = "Выберите товар."
+        else:
+            try:
+                pid = int(product_id)
+            except (ValueError, TypeError):
+                error = "Неверный идентификатор товара."
 
         boxes = None
         units_per_box = None
@@ -412,20 +430,24 @@ def expense():
         if error is None:
             with get_db() as conn:
                 product = conn.execute(
-                    "SELECT id FROM products WHERE id=?", (product_id,)
+                    "SELECT id FROM products WHERE id=?", (pid,)
                 ).fetchone()
                 if not product:
                     error = "Товар не найден."
         if error:
             flash(error, "danger")
         else:
-            with get_db() as conn:
-                conn.execute(
-                    "INSERT INTO transactions (product_id, type, quantity, boxes, units_per_box, price, currency, note)"
-                    " VALUES (?, 'expense', ?, ?, ?, ?, ?, ?)",
-                    (product_id, qty, boxes, units_per_box, prc, currency, note or None),
-                )
-            flash("Расход зарегистрирован.", "success")
+            try:
+                with get_db() as conn:
+                    conn.execute(
+                        "INSERT INTO transactions (product_id, type, quantity, boxes, units_per_box, price, currency, note)"
+                        " VALUES (?, 'expense', ?, ?, ?, ?, ?, ?)",
+                        (pid, qty, boxes, units_per_box, prc, currency, note or None),
+                    )
+                flash("Расход зарегистрирован.", "success")
+            except _DatabaseError:
+                app.logger.exception("Ошибка при регистрации расхода")
+                flash("Ошибка при регистрации расхода. Попробуйте ещё раз.", "danger")
         return redirect(url_for("expense"))
 
     rate = get_exchange_rate()
@@ -548,7 +570,9 @@ def report():
             else:
                 val_uzs = q * prc
 
-            if t["tx_date"] < start_date:
+            tx_date_str = str(t["tx_date"])[:10]
+
+            if tx_date_str < start_date:
                 # Before the period → opening balance
                 if t["type"] == "income":
                     opening_qty += q
@@ -556,7 +580,7 @@ def report():
                 else:
                     opening_qty -= q
                     opening_val -= val_uzs
-            elif t["tx_date"] <= end_date:
+            elif tx_date_str <= end_date:
                 # During the period
                 if t["type"] == "income":
                     income_qty += q

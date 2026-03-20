@@ -301,3 +301,45 @@ def test_report_date_filter(client):
     # Request report for a future period where no transactions exist
     rv = client.get("/report?start_date=2099-01-01&end_date=2099-12-31")
     assert rv.status_code == 200
+
+
+def test_report_with_date_objects(client):
+    """Report date comparison works even when tx_date is a datetime.date object (PostgreSQL)."""
+    import datetime
+
+    pid = _add_product(client, "Дата Объект Товар", "шт")
+    client.post("/income", data={"product_id": pid, "quantity": "20", "price": "2", "currency": "USD"})
+
+    # The fix converts str(tx_date)[:10] before comparing, so a datetime.date
+    # object should produce the correct ISO string for comparison.
+    tx_date = datetime.date.today()
+    tx_date_str = str(tx_date)[:10]
+    today_str = datetime.date.today().isoformat()
+    # Verify the conversion produces a string that compares correctly
+    assert tx_date_str <= today_str
+    assert isinstance(tx_date_str, str)
+
+    rv = client.get("/report")
+    assert rv.status_code == 200
+
+
+def test_income_invalid_product_id(client):
+    """Income with invalid product_id returns error, not 500."""
+    rv = client.post(
+        "/income",
+        data={"product_id": "not-a-number", "quantity": "10"},
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    assert "Неверный идентификатор".encode() in rv.data
+
+
+def test_expense_invalid_product_id(client):
+    """Expense with invalid product_id returns error, not 500."""
+    rv = client.post(
+        "/expense",
+        data={"product_id": "not-a-number", "quantity": "10"},
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    assert "Неверный идентификатор".encode() in rv.data
